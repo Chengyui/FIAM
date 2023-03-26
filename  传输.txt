@@ -1,0 +1,4 @@
+embed_dim=64 encoder_dim=64 plus 6.39
+embed_dim=128 encoder_dim=128 plus 6.21359
+embed_dim = 64 encoder_dim=128 concat 6.26765
+embed_dim = 128 encoder_dim=256 concat 6.22685
