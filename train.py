@@ -173,7 +173,7 @@ def train_batch(
 #     dist_max,_ = dist.view(dist.size(0),-1).max(dim=1)
 #     dist_max = dist_max.unsqueeze(-1).unsqueeze(-1).repeat(1,dist.size(1),1)
 #     # dist = dist/dist_max
-#     return dist
+
 def calculate_seperate_policy_gradient(input,trace,ll_list,problem,origin_cost,opts,gamma=0.5):
     """
     input:
