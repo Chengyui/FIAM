@@ -1,10 +1,11 @@
 def log_values(cost, grad_norms, epoch, batch_id, step,
-               log_likelihood, reinforce_loss, bl_loss, tb_logger, opts):
+               log_likelihood, reinforce_loss, bl_loss, tb_logger, opts,reinforce_seperate_loss,adv_costs):
     avg_cost = cost.mean().item()
+    adv_costs = adv_costs.mean().item()
     grad_norms, grad_norms_clipped = grad_norms
 
     # Log values to screen
-    print('epoch: {}, train_batch_id: {}, avg_cost: {}'.format(epoch, batch_id, avg_cost))
+    print('epoch: {}, train_batch_id: {}, avg_cost: {}, reinforce_seperate_loss: {}, adv_costs: {}'.format(epoch, batch_id, avg_cost,reinforce_seperate_loss,adv_costs))
 
     print('grad_norm: {}, clipped: {}'.format(grad_norms[0], grad_norms_clipped[0]))
 
@@ -14,9 +15,10 @@ def log_values(cost, grad_norms, epoch, batch_id, step,
 
         tb_logger.log_value('actor_loss', reinforce_loss.item(), step)
         tb_logger.log_value('nll', -log_likelihood.mean().item(), step)
-
+        tb_logger.log_value('reinforce_seperate_loss',reinforce_seperate_loss.item(),step)
         tb_logger.log_value('grad_norm', grad_norms[0], step)
         tb_logger.log_value('grad_norm_clipped', grad_norms_clipped[0], step)
+        tb_logger.log_value('adv_costs',adv_costs,step)
 
         if opts.baseline == 'critic':
             tb_logger.log_value('critic_loss', bl_loss.item(), step)

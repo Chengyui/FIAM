@@ -151,7 +151,7 @@ def train_batch(
 
     # Calculate loss
     reinforce_loss = ((cost - bl_val) * log_likelihood).mean()
-    reinforce_seperate_loss = calculate_seperate_policy_gradient(x, pi, ll_list, problem, cost, opts)
+    reinforce_seperate_loss,adv_costs = calculate_seperate_policy_gradient(x, pi, ll_list, problem, cost, opts)
     loss = reinforce_loss + bl_loss + reinforce_seperate_loss
 
     # Perform backward pass and optimization step
@@ -164,7 +164,7 @@ def train_batch(
     # Logging
     if step % int(opts.log_step) == 0:
         log_values(cost, grad_norms, epoch, batch_id, step,
-                   log_likelihood, reinforce_loss, bl_loss, tb_logger, opts)
+                   log_likelihood, reinforce_loss, bl_loss, tb_logger, opts,reinforce_seperate_loss,adv_costs)
 # def adjacency(input):
 #     """
 #     shape: {512,20,2}
@@ -173,7 +173,7 @@ def train_batch(
 #     dist_max,_ = dist.view(dist.size(0),-1).max(dim=1)
 #     dist_max = dist_max.unsqueeze(-1).unsqueeze(-1).repeat(1,dist.size(1),1)
 #     # dist = dist/dist_max
-
+#     return dist
 def calculate_seperate_policy_gradient(input,trace,ll_list,problem,origin_cost,opts,gamma=0.5):
     """
     input:
@@ -204,9 +204,10 @@ def calculate_seperate_policy_gradient(input,trace,ll_list,problem,origin_cost,o
             best_costs[:, j] = torch.where(best_costs[:, j] > cost_swap, cost_swap, best_costs[:, j])
     # shape: (batch_size, trace_length)
     adv = origin_cost.unsqueeze(-1).repeat(1,trace.size(1)) - best_costs
+
     G = 0
     loss = 0
     for i in range(trace.size(1)):
         G = gamma*G + adv[:,i]
         loss = loss+(G*ll_list[:,i]).mean()
-    return loss
+    return loss,adv
