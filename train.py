@@ -34,7 +34,7 @@ def rollout(model, dataset, opts):
 
     def eval_model_bat(bat):
         with torch.no_grad():
-            cost, _ = model(move_to(bat, opts.device))
+            cost, _,_,_,_ = model(move_to(bat, opts.device))
         return cost.data.cpu()
 
     return torch.cat([
@@ -75,7 +75,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     # Generate new training data for each epoch
     training_dataset = baseline.wrap_dataset(problem.make_dataset(
         size=opts.graph_size, num_samples=opts.epoch_size, distribution=opts.data_distribution))
-    training_dataloader = DataLoader(training_dataset, batch_size=opts.batch_size, num_workers=1)
+    training_dataloader = DataLoader(training_dataset, batch_size=opts.batch_size, num_workers=0)
 
     # Put model in train mode!
     model.train()
@@ -91,6 +91,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
             batch_id,
             step,
             batch,
+            problem,
             tb_logger,
             opts
         )
@@ -132,6 +133,7 @@ def train_batch(
         batch_id,
         step,
         batch,
+        problem,
         tb_logger,
         opts
 ):
@@ -142,14 +144,15 @@ def train_batch(
     bl_val = move_to(bl_val, opts.device) if bl_val is not None else None
 
     # Evaluate model, get costs and log probabilities
-    cost, log_likelihood = model(x)
+    cost, log_likelihood,ll_list,pi,_ = model(x)
 
     # Evaluate baseline, get baseline loss if any (only for critic)
     bl_val, bl_loss = baseline.eval(x, cost) if bl_val is None else (bl_val, 0)
 
     # Calculate loss
     reinforce_loss = ((cost - bl_val) * log_likelihood).mean()
-    loss = reinforce_loss + bl_loss
+    reinforce_seperate_loss = calculate_seperate_policy_gradient(x, pi, ll_list, problem, cost, opts)
+    loss = reinforce_loss + bl_loss + reinforce_seperate_loss
 
     # Perform backward pass and optimization step
     optimizer.zero_grad()
@@ -171,3 +174,39 @@ def train_batch(
 #     dist_max = dist_max.unsqueeze(-1).unsqueeze(-1).repeat(1,dist.size(1),1)
 #     # dist = dist/dist_max
 #     return dist
+def calculate_seperate_policy_gradient(input,trace,ll_list,problem,origin_cost,opts,gamma=0.5):
+    """
+    input:
+    input:{batch_size,num_node,2}
+    trace:{batch_size,trace_length} for tsp trace_length is equal to num_node
+    ll_list:{batch_size,trace}
+    problem:tsp,cvrp....
+    origin_cost:{batch_size,1}
+
+    output:
+    reward: {batch_size,trace_length}
+    """
+    def get_costs(input,trace):
+        d = input.gather(1, trace.unsqueeze(-1).expand_as(input))
+        cost = (d[:, 1:] - d[:, :-1]).norm(p=2, dim=2).sum(1) + (d[:, 0] - d[:, -1]).norm(p=2, dim=1)
+        return cost
+    adv = torch.zeros(input.size(0),input.size(1)).to(opts.device)
+    # 对于每一个被交换的节点，最好的cost
+    best_costs = torch.full((trace.size(0),trace.size(1)), float('inf')).to(opts.device)
+
+    for i in range(trace.size(1)):
+        for j in range(i+1,trace.size(1)):
+            trace_ = trace.clone()
+            trace_[:,[i,j]] = trace_[:,[j,i]]
+            # shape:{batch_size,1}
+            cost_swap = get_costs(input,trace_)
+            best_costs[:, i] = torch.where(best_costs[:, i] > cost_swap, cost_swap, best_costs[:, i])
+            best_costs[:, j] = torch.where(best_costs[:, j] > cost_swap, cost_swap, best_costs[:, j])
+    # shape: (batch_size, trace_length)
+    adv = origin_cost.unsqueeze(-1).repeat(1,trace.size(1)) - best_costs
+    G = 0
+    loss = 0
+    for i in range(trace.size(1)):
+        G = gamma*G + adv[:,i]
+        loss = loss+(G*ll_list[:,i]).mean()
+    return loss

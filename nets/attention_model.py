@@ -139,11 +139,11 @@ class AttentionModel(nn.Module):
         cost, mask = self.problem.get_costs(input, pi)
         # Log likelyhood is calculated within the model since returning it per action does not work well with
         # DataParallel since sequences can be of different lengths
-        ll = self._calc_log_likelihood(_log_p, pi, mask)
+        ll,ll_list = self._calc_log_likelihood(_log_p, pi, mask)
         if return_pi:
             return cost, ll, pi
 
-        return cost, ll
+        return cost, ll,ll_list,pi,embeddings
 
     def beam_search(self, *args, **kwargs):
         return self.problem.beam_search(*args, **kwargs, model=self)
@@ -196,7 +196,7 @@ class AttentionModel(nn.Module):
         assert (log_p > -1000).data.all(), "Logprobs should not be -inf, check sampling procedure!"
 
         # Calculate log_likelihood
-        return log_p.sum(1)
+        return log_p.sum(1),log_p
 
     def _init_embed(self, input):
 
