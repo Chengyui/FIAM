@@ -204,7 +204,7 @@ def calculate_seperate_policy_gradient(input,trace,ll_list,problem,origin_cost,o
             best_costs[:, j] = torch.where(best_costs[:, j] > cost_swap, cost_swap, best_costs[:, j])
     # shape: (batch_size, trace_length)
     adv = origin_cost.unsqueeze(-1).repeat(1,trace.size(1)) - best_costs
-
+    adv[adv<0] = 0
     G = 0
     loss = 0
     for i in range(trace.size(1)):
