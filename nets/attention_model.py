@@ -101,6 +101,8 @@ class AttentionModel(nn.Module):
 
         self.init_embed = nn.Linear(node_dim, int(embedding_dim/2))
         self.invariant_embed = InvariantEmbed(20,int(embedding_dim/2))
+        # self.init_embed = nn.Linear(node_dim, int(embedding_dim ))
+        # self.invariant_embed = InvariantEmbed(20, int(embedding_dim ))
         self.embedder = GraphAttentionEncoder(
             n_heads=n_heads,
             embed_dim=embedding_dim,
@@ -133,7 +135,7 @@ class AttentionModel(nn.Module):
             embeddings, _ = checkpoint(self.embedder, self._init_embed(input))
         else:
             embeddings, _ = self.embedder(torch.cat((self._init_embed(input), self.invariant_embed(input)), dim=2))
-
+            # embeddings, _ = self.embedder(self._init_embed(input)+ self.invariant_embed(input))
         _log_p, pi = self._inner(input, embeddings)
 
         cost, mask = self.problem.get_costs(input, pi)
@@ -284,7 +286,8 @@ class AttentionModel(nn.Module):
         return sample_many(
             lambda input: self._inner(*input),  # Need to unpack tuple into arguments
             lambda input, pi: self.problem.get_costs(input[0], pi),  # Don't need embeddings as input to get_costs
-            (input, self.embedder(self._init_embed(input))[0]),  # Pack input with embeddings (additional input)
+            (input, self.embedder(torch.cat((self._init_embed(input),self.invariant_embed(input)),dim=2))[0]),  # Pack input with embeddings (additional input)
+            # (input, self.embedder(self._init_embed(input)+self.invariant_embed(input))[0]),
             batch_rep, iter_rep
         )
 
