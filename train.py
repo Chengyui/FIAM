@@ -199,16 +199,18 @@ def calculate_seperate_policy_gradient(input,trace,ll_list,problem,origin_cost,o
         input (512,20,2)
         trace (512,x,20)
         """
-        trace = trace.unsqueeze(-1).unsqueeze(-1).expand(trace.shape[0], trace.shape[1], 2, 2)
-        input = input.unsqueeze(1).expand(input.shape[0], trace.shape[1], input.shape[1], input.shape[2])
-        d = torch.gather(input, 2, trace)
-        cost = (d[:, :, 1:] - d[:, :, :-1]).norm(p=2, dim=3).sum(2) + (d[:, :, 0] - d[:, :, -1]).norm(p=2, dim=2)
+        batch_size = trace.size(0)
+        trace = trace.view(-1, trace.size(2))
+        input = input.repeat(trace.size(1),1,1)
+        d = input.gather(1, trace.unsqueeze(-1).expand_as(input))
+        cost = (d[:, 1:] - d[:, :-1]).norm(p=2, dim=2).sum(1) + (d[:, 0] - d[:, -1]).norm(p=2, dim=1)
+        cost = cost.view(batch_size,-1)
         return cost
 
     adv = torch.zeros(input.size(0),input.size(1)).to(opts.device)
     # 对于每一个被交换的节点，最好的cost
     best_costs = torch.full((trace.size(0),trace.size(1)), float('inf')).to(opts.device)
-
+    best_costs1 = torch.full((trace.size(0), trace.size(1)), float('inf')).to(opts.device)
     # for i in range(trace.size(1)):
     #     for j in range(i+1,trace.size(1)):
     #         trace_ = trace.clone()
@@ -217,12 +219,36 @@ def calculate_seperate_policy_gradient(input,trace,ll_list,problem,origin_cost,o
     #         cost_swap = get_costs(input,trace_)
     #         best_costs[:, i] = torch.where(best_costs[:, i] > cost_swap, cost_swap, best_costs[:, i])
     #         best_costs[:, j] = torch.where(best_costs[:, j] > cost_swap, cost_swap, best_costs[:, j])
-    # # shape: (batch_size, trace_length)
-    # create all pairs of indices
-    # create all pairs of indices
 
 
-    # pairs = torch.combinations(torch.arange(trace.size(1)), r=2).to(opts.device)
+
+    for i in range(trace.size(1)):
+        trace_all = trace.clone().unsqueeze(1).repeat(1, trace.size(1), 1)
+        pair = torch.zeros(trace.size(1),2,dtype=int).to(opts.device)
+        pair[:,0] = i
+        pair[:,1] = torch.arange(trace.size(1))
+        pair_ = pair.clone()
+        pair_[:,[0,1]] = pair_[:,[1,0]]
+        sub_tensor = torch.gather(trace_all,dim=2,index=pair_.unsqueeze(0).expand(trace.size(0),-1,-1))
+        trace_all.scatter_(dim=2, index=pair.unsqueeze(0).expand(trace.size(0), -1, -1), src=sub_tensor)
+        # trace_all = trace_all.view(-1, trace.size(1))
+        #trace_all :{512,20,20},cost_swap:{512,20}
+        cost_swap = get_costs2(input, trace_all)
+        best_costs1[:,i],_ = cost_swap.min(dim=1)
+
+
+
+
+    adv = origin_cost.unsqueeze(-1).repeat(1,trace.size(1)) - best_costs1
+    adv[adv<0] = 0
+    G = 0
+    loss = 0
+    for i in range(trace.size(1)):
+        G = gamma*G + adv[:,i]
+        loss = loss+(G*ll_list[:,i]).mean()
+    return loss,adv
+
+# pairs = torch.combinations(torch.arange(trace.size(1)), r=2).to(opts.device)
     # pairs = [0,torch.arange(trace.size(1))]
     # # create a tensor of all possible traces
     # trace_all = trace.clone().unsqueeze(1).repeat(1, pairs.size(0), 1)
@@ -243,30 +269,3 @@ def calculate_seperate_policy_gradient(input,trace,ll_list,problem,origin_cost,o
 
 
     #################
-    #
-
-    for i in range(trace.size(0)):
-        trace_all = trace.clone().unsqueeze(1).repeat(1, trace.size(1), 1)
-        pair = torch.zeros(trace.size(1),2,dtype=int).to(opts.device)
-        pair[:,0] = i
-        pair[:,1] = torch.arange(trace.size(1))
-        pair_ = pair.clone()
-        pair_[:,[0,1]] = pair_[:,[1,0]]
-        sub_tensor = torch.gather(trace_all,dim=2,index=pair_.unsqueeze(0).expand(trace.size(0),-1,-1))
-        trace_all.scatter_(dim=2, index=pair.unsqueeze(0).expand(trace.size(0), -1, -1), src=sub_tensor)
-        # trace_all = trace_all.view(-1, trace.size(1))
-        #trace_all :{512,20,20},cost_swap:{512,20}
-        cost_swap = get_costs2(input, trace_all)
-        best_costs[:,i],_ = cost_swap.min(dim=1)
-
-
-
-
-    adv = origin_cost.unsqueeze(-1).repeat(1,trace.size(1)) - best_costs
-    adv[adv<0] = 0
-    G = 0
-    loss = 0
-    for i in range(trace.size(1)):
-        G = gamma*G + adv[:,i]
-        loss = loss+(G*ll_list[:,i]).mean()
-    return loss,adv
