@@ -200,8 +200,10 @@ def calculate_seperate_policy_gradient(input,trace,ll_list,problem,origin_cost,o
         trace (512,x,20)
         """
         batch_size = trace.size(0)
-        trace = trace.view(-1, trace.size(2))
-        input = input.repeat(trace.size(1),1,1)
+        trace_length = trace.size(2)
+        trace = trace.view(-1, trace.size(2)) # view后，trace的1-20是对应同一个instance
+        input = input.repeat(1,trace.size(1),1) # 而input进行repeat，1-20对应的是1-20个instance
+        input = input.view(-1,trace_length,input.size(2))
         d = input.gather(1, trace.unsqueeze(-1).expand_as(input))
         cost = (d[:, 1:] - d[:, :-1]).norm(p=2, dim=2).sum(1) + (d[:, 0] - d[:, -1]).norm(p=2, dim=1)
         cost = cost.view(batch_size,-1)
@@ -211,14 +213,14 @@ def calculate_seperate_policy_gradient(input,trace,ll_list,problem,origin_cost,o
     # 对于每一个被交换的节点，最好的cost
     best_costs = torch.full((trace.size(0),trace.size(1)), float('inf')).to(opts.device)
     best_costs1 = torch.full((trace.size(0), trace.size(1)), float('inf')).to(opts.device)
-    # for i in range(trace.size(1)):
-    #     for j in range(i+1,trace.size(1)):
-    #         trace_ = trace.clone()
-    #         trace_[:,[i,j]] = trace_[:,[j,i]]
-    #         # shape:{batch_size,1}
-    #         cost_swap = get_costs(input,trace_)
-    #         best_costs[:, i] = torch.where(best_costs[:, i] > cost_swap, cost_swap, best_costs[:, i])
-    #         best_costs[:, j] = torch.where(best_costs[:, j] > cost_swap, cost_swap, best_costs[:, j])
+    for i in range(trace.size(1)):
+        for j in range(i+1,trace.size(1)):
+            trace_ = trace.clone()
+            trace_[:,[i,j]] = trace_[:,[j,i]]
+            # shape:{batch_size,1}
+            cost_swap = get_costs(input,trace_)
+            best_costs[:, i] = torch.where(best_costs[:, i] > cost_swap, cost_swap, best_costs[:, i])
+            best_costs[:, j] = torch.where(best_costs[:, j] > cost_swap, cost_swap, best_costs[:, j])
 
 
 
