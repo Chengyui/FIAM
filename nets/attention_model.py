@@ -86,7 +86,7 @@ class AttentionModel(nn.Module):
                 node_dim = 3  # x, y, demand / prize
 
             # Special embedding projection for depot node
-            self.init_embed_depot = nn.Linear(2, embedding_dim)
+            self.init_embed_depot = nn.Linear(2, int(embedding_dim/2))
             
             if self.is_vrp and self.allow_partial:  # Need to include the demand if split delivery allowed
                 self.project_node_step = nn.Linear(1, 3 * embedding_dim, bias=False)
@@ -134,7 +134,7 @@ class AttentionModel(nn.Module):
         if self.checkpoint_encoder and self.training:  # Only checkpoint if we need gradients
             embeddings, _ = checkpoint(self.embedder, self._init_embed(input))
         else:
-            embeddings, _ = self.embedder(torch.cat((self._init_embed(input), self.invariant_embed(input)), dim=2))
+            embeddings, _ = self.embedder(self._init_embed(input))
             # embeddings, _ = self.embedder(self._init_embed(input)+ self.invariant_embed(input))
         _log_p, pi = self._inner(input, embeddings)
 
@@ -210,18 +210,24 @@ class AttentionModel(nn.Module):
             else:
                 assert self.is_pctsp
                 features = ('deterministic_prize', 'penalty')
-            return torch.cat(
-                (
-                    self.init_embed_depot(input['depot'])[:, None, :],
-                    self.init_embed(torch.cat((
+            init_depot = self.init_embed_depot(input['depot'])[:, None, :]
+            init_embed_content = torch.cat((
                         input['loc'],
                         *(input[feat][:, :, None] for feat in features)
-                    ), -1))
+                    ), -1)
+            init_embedding = self.init_embed(init_embed_content)
+            init_out = torch.cat(
+                (
+                    init_depot,
+                    init_embedding
                 ),
                 1
             )
+            all_points = torch.cat((input['depot'].unsqueeze(1),input['loc']),dim=1)
+            invariant_init = self.invariant_embed(all_points)
+            return torch.cat((init_out, invariant_init),dim=2)
         # TSP
-        return self.init_embed(input)
+        return torch.cat((self.init_embed(input), self.invariant_embed(input)), dim=2)
 
     def _inner(self, input, embeddings):
 
